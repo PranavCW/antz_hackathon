@@ -4,6 +4,11 @@ Offline prototype that compares each zoo animal against its own baseline (weight
 keeper notes decoded by a self-hosted open-source LLM) and raises explainable early-warning alerts,
 validated by backtesting on historical data. Full design: [docs/PLAN.md](docs/PLAN.md).
 
+## Setup
+```bash
+cp .env.example .env      # then fill in DB credentials, ZOO_ID, timezone, LLM settings
+```
+
 ## Run
 ```bash
 python main.py            # list pipeline stages

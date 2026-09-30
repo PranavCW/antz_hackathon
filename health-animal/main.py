@@ -6,6 +6,7 @@ Stages are placeholders for now; see docs/PLAN.md for what each one will do.
 import argparse
 
 STAGES = [
+    ("db_check", "Test DB connection from .env; list key tables and row counts"),
     ("schema_check", "Verify dump schema against the data dictionary"),
     ("extract", "Pull source tables from the DB dump into data/raw"),
     ("clean", "Normalise units, apply cleaning rules, data-quality report"),
@@ -29,6 +30,11 @@ def main() -> None:
         print("Pipeline stages:")
         for name, desc in STAGES:
             print(f"  {name:<13} {desc}")
+        return
+
+    if args.stage == "db_check":
+        from src import db_check
+        db_check.run()
         return
 
     print(f"Stage '{args.stage}' is not implemented yet.")

@@ -1,0 +1,22 @@
+# Secrets
+.env
+!.env.example
+
+# Zoo data extracts and generated outputs (sensitive; never commit)
+health-animal/data/raw/*
+health-animal/data/processed/*
+health-animal/outputs/*
+!health-animal/**/.gitkeep
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.ipynb_checkpoints/
+.pytest_cache/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
