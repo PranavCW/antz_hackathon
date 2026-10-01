@@ -1,0 +1,59 @@
+# Pipeline tuning. Connection details, ZOO_ID, timezone and LLM host live in .env.
+# Section refs (§1.2, B1, …) point into docs/PLAN.md.
+
+# Chosen at checkpoint M1 from the profile stage (3–5 species, by taxonomy tsn)
+species: []
+
+weight:                      # §1.2, B1, B2, F
+  baseline_days: 180
+  min_readings_in_baseline: 3
+  min_readings_last_days: 60 # need ≥1 reading in this many days
+  species_band_pct: [1, 99]  # adult percentile band within zoo…
+  species_band_factor: [0.5, 1.5]  # …widened by these factors; outside = typo, dropped
+  hampel_sigmas: 3
+  unit_slip_tolerance: 0.1   # ratio within ±10% of 1000 / 2.2046 counts as a unit slip
+  near_duplicate_minutes: 1
+
+intake:                      # §1.3, B3, C–E
+  baseline_days: 30
+  min_valid_days: 10
+  min_logging_rate: 0.3      # below → low_confidence
+  cusum_k: 0.5
+  cusum_h: 4
+  cusum_max_missing_days: 7  # longer gap resets S
+
+detectors:                   # C, D
+  z_threshold: 3
+  mad_floor: 1.0e-6          # guards divide-by-zero; revisit per signal once data is seen
+
+notes:                       # §1.4, B4, G
+  window_days: 7
+  duplicate_window_days: 3
+  evidence_fuzzy_min: 90     # rapidfuzz partial ratio for verbatim-quote check
+  skip_note_types: [Plumbing, Electrical, Carpentry, Civil, Fabrication, HR, House Keeping]
+  categories: [appetite, mobility, behaviour, gi, respiratory, skin_injury, body_condition, other]
+  llm_temperature: 0
+
+labels:                      # H, I
+  horizon_days: 14           # label 1 if T0 within (d, d+14]
+  negative_clear_days: 60    # label 0 only if no T0 within 60 days
+  episode_merge_days: 14
+  euthanasia_lookback_days: 60
+  early_window_days: 60      # alerts in [T0−60, T0) count as early
+  min_severity: High
+  min_prognosis: poor
+
+manner_of_death:             # §1.5 — verify string_ids with SELECT DISTINCT in schema_check
+  illness: [disease, malnutrition, natural, old_age, oldage, congential_types]
+  euthanasia: [euthanasia]
+  trauma: [attacked, stray_attack, murder, foul_play, poisoned, thunder_attack, thunder_blast]
+  unknown: [indeterminate, undetermined, suspicious]
+  junk: [test, test2]
+
+alerting:                    # H, I
+  cooldown_days: 7
+  max_alerts_per_week: 3     # placeholder budget; agree with vets before the backtest sweep
+
+model:                       # H
+  test_fraction: 0.5         # newest half of history held out (time split)
+  random_seed: 42

@@ -1,14 +1,16 @@
 """Entry point for the Antz Early Health Warning prototype.
 
-Stages are placeholders for now; see docs/PLAN.md for what each one will do.
+Each stage is a module in src/ with a run() function; see docs/PLAN.md for what each one does.
 """
 
 import argparse
+import importlib
 
 STAGES = [
     ("db_check", "Test DB connection from .env; list key tables and row counts"),
-    ("schema_check", "Verify dump schema against the data dictionary"),
-    ("extract", "Pull source tables from the DB dump into data/raw"),
+    ("llm_check", "Test Ollama models and schema-forced JSON on a sample note"),
+    ("schema_check", "Verify live schema against the data dictionary"),
+    ("extract", "Pull source tables for ZOO_ID into data/raw"),
     ("clean", "Normalise units, apply cleaning rules, data-quality report"),
     ("profile", "Per-species data density; choose 3-5 species"),
     ("cases", "Build illness episodes and vet-awareness date (T0)"),
@@ -32,12 +34,7 @@ def main() -> None:
             print(f"  {name:<13} {desc}")
         return
 
-    if args.stage == "db_check":
-        from src import db_check
-        db_check.run()
-        return
-
-    print(f"Stage '{args.stage}' is not implemented yet.")
+    importlib.import_module(f"src.{args.stage}").run()
 
 
 if __name__ == "__main__":

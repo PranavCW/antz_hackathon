@@ -10,7 +10,7 @@ in which order, and when it counts as done**. Section references (§1.2, B1, H �
 | Duration | 2 days, split into 1 setup sprint + 4 half-day sprints (~4 h each) |
 | Team | 1–2 people. **Track A** = data & model (critical path). **Track B** = notes LLM & demo app |
 | Solo mode | One person runs Track A in full. Track B shrinks to: kick off the LLM batch (S2), then the Streamlit timeline (S4) |
-| Input | DB dump of one zoo, restored locally. Offline Python only, no proprietary LLM API |
+| Input | Dev DB (read-only), one zoo (`ZOO_ID` in `.env`) extracted once to parquet. Offline Python only, no proprietary LLM API |
 | Headline deliverable | *"Flags X of Y past cases, on average Z days earlier, at ≤ N alerts/week/zoo"* + a timeline demo + slides |
 | Sprint goal = | the one thing that must be true at the end of the sprint. If it is at risk, cut scope, not the goal |
 
@@ -26,14 +26,20 @@ in which order, and when it counts as done**. Section references (§1.2, B1, H �
 ---
 
 ## 1. Sprint 0 — Setup (Day 1, first ~1 h)
-**Goal:** everyone can run `python main.py` against a restored dump.
+**Goal:** everyone can run `python main.py` against the Dev DB.
 
 | ID | Task | Track | Est. | Done when |
 |---|---|---|---|---|
-| S0-1 | `docker-compose.yml` with MySQL 8; restore dump into it | A | 30 m | `SELECT COUNT(*) FROM antz_animals` returns rows |
-| S0-2 | `requirements.txt` (§3 libraries), venv, `config/config.yaml` (zoo_id, timezone, windows, thresholds, alert budget, LLM model) | A | 20 m | `pip install -r requirements.txt` clean; config loads |
-| S0-3 | Install Ollama, pull `qwen2.5:7b-instruct` (fallback `qwen2.5:3b`); one JSON-schema smoke call | B | 30 m | Returns valid JSON for a sample note |
-| S0-4 | `main.py` wires stage names → `src/` modules (stubs OK) | B | 15 m | `python main.py --stage schema_check` runs |
+| S0-1 | ~~Docker MySQL + dump restore~~ → connect to Dev DB via `.env` (read-only, UTC sessions; optional SSH tunnel) | A | 30 m | `python main.py db_check` lists key tables + zoo animal count |
+| S0-2 | `requirements.txt`, `.venv`, `config/config.yaml` (windows, thresholds, alert budget) + `src/config.py` loader (merges `.env`) | A | 20 m | `pip install -r requirements.txt` clean; config loads |
+| S0-3 | Install Ollama, pull `qwen2.5:7b-instruct` (fallback `qwen2.5:3b`); JSON-schema smoke call | B | 30 m | `python main.py llm_check` returns valid JSON with verbatim quotes |
+| S0-4 | `main.py` dispatches stage names → `src/<stage>.py` `run()` (stubs OK) | B | 15 m | `python main.py schema_check` reaches the stub |
+
+Setup for a new machine: `python3 -m venv .venv && .venv/bin/pip install -r requirements.txt`,
+`cp .env.example .env` (fill in), `brew install ollama && ollama serve`, `ollama pull qwen2.5:7b-instruct`.
+
+**Open from S0:** confirm which environment `admin_zoolive` is and that pulling keeper/medical data locally
+is allowed; get a read-only DB user (current one can write).
 
 ---
 
@@ -116,11 +122,14 @@ Cut from the top; never cut the backtest.
 | LLM too slow or bad JSON on laptop | Medium | Medium | 3B model fallback; volume filters (§G); lexicon fallback | B |
 | Leftover data too sparse on solo enclosures | High | Low | `low_confidence` flag; cut order #3 | A |
 | Leakage inflates results | Medium | High | Leakage test is a done-criterion of S3-2 | A |
-| Dump restore takes hours | Low | High | Start restore the evening before if the dump is large | A |
+| DB is live/shared (`admin_zoolive`, write-capable user) | Medium | High | Sessions forced read-only; extract once to parquet; ask for read-only user | A |
+| Feeding-wastage data near-empty (~130 rows all zoos) | High | Medium | Decide at M1 whether to cut the leftover detector (cut order #3) | A |
 
 ## 8. Definition of done (every task)
 - Code in `src/`, runnable via `main.py --stage <name>`, reads `config/config.yaml`.
 - Outputs written to `data/processed/` or `outputs/`, never back to the DB.
+- **All DB access goes through `src.db.get_engine()`** — it is read-only by construction (`src/readonly.py`
+  guard + server-side READ ONLY session). Never open a pymysql/SQLAlchemy connection any other way.
 - Every dropped or corrected row carries a reason flag (feeds the data-quality report).
 - Any finding that contradicts PLAN.md is fixed in PLAN.md the same sprint.
 

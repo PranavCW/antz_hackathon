@@ -5,8 +5,14 @@ cryptography        # MySQL 8 caching_sha2_password auth
 python-dotenv
 sshtunnel           # only used when SSH_HOST is set
 
+# Notes LLM
+ollama
+
 # Data
 pandas
 numpy
 pyarrow
 pyyaml
+
+# Tests
+pytest

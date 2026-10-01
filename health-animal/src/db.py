@@ -1,4 +1,8 @@
-"""Database access: settings from .env, read-only UTC SQLAlchemy engine, optional SSH tunnel."""
+"""Database access: settings from .env, read-only UTC SQLAlchemy engine, optional SSH tunnel.
+
+The Dev DB must only ever be read. Every connection is a ReadOnlyConnection (src/readonly.py), which rejects
+any non-read statement before sending it, and the session is set to READ ONLY and verified on connect.
+"""
 
 import os
 from contextlib import contextmanager
@@ -6,7 +10,9 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, event
-from sqlalchemy.engine import URL, Engine
+from sqlalchemy.engine import Engine
+
+from src.readonly import ReadOnlyConnection, ReadOnlyViolation
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(PROJECT_ROOT / ".env")
@@ -17,34 +23,47 @@ def env(key: str, default: str = "") -> str:
 
 
 def _make_engine(host: str, port: int) -> Engine:
-    url = URL.create(
-        "mysql+pymysql",
-        username=env("DB_USER"),
-        password=env("DB_PASSWORD"),
-        host=host,
-        port=port,
-        database=env("DB_NAME"),
-        query={"charset": env("DB_CHARSET", "utf8mb4")},
-    )
-    connect_args = {"connect_timeout": 15}
+    connect_kwargs = {
+        "host": host,
+        "port": port,
+        "user": env("DB_USER"),
+        "password": env("DB_PASSWORD"),
+        "database": env("DB_NAME"),
+        "charset": env("DB_CHARSET", "utf8mb4"),
+        "connect_timeout": 15,
+        "local_infile": False,  # no LOAD DATA LOCAL
+        "client_flag": 0,       # in particular no CLIENT.MULTI_STATEMENTS
+    }
     if env("DB_SSL_CA"):
-        connect_args["ssl"] = {"ca": os.path.expanduser(env("DB_SSL_CA"))}
+        connect_kwargs["ssl"] = {"ca": os.path.expanduser(env("DB_SSL_CA"))}
 
-    engine = create_engine(url, connect_args=connect_args, pool_pre_ping=True)
+    # creator= makes SQLAlchemy use our guarded connection class for every pooled connection
+    engine = create_engine(
+        "mysql+pymysql://", creator=lambda: ReadOnlyConnection(**connect_kwargs), pool_pre_ping=True
+    )
 
     @event.listens_for(engine, "connect")
     def _session_setup(dbapi_conn, _record):
-        # Antz stores server time in UTC; read it as-is. Refuse writes even if the user has grants.
+        # Antz stores server time in UTC; read it as-is. Server-side read-only as a second layer.
+        dbapi_conn._setup_query("SET time_zone = '+00:00'")
+        dbapi_conn._setup_query("SET SESSION TRANSACTION READ ONLY")
         with dbapi_conn.cursor() as cur:
-            cur.execute("SET time_zone = '+00:00'")
-            cur.execute("SET SESSION TRANSACTION READ ONLY")
+            cur.execute("SELECT @@SESSION.transaction_read_only, @@SESSION.sql_mode")
+            read_only, sql_mode = cur.fetchone()
+        if read_only != 1:
+            dbapi_conn.close()
+            raise ReadOnlyViolation("Server did not accept SESSION TRANSACTION READ ONLY; refusing to continue")
+        if "NO_BACKSLASH_ESCAPES" in (sql_mode or "").upper():
+            # The guard parses strings with backslash escapes; under this mode it could misread them.
+            dbapi_conn.close()
+            raise ReadOnlyViolation("sql_mode NO_BACKSLASH_ESCAPES is set; the read-only guard can't parse safely")
 
     return engine
 
 
 @contextmanager
 def get_engine():
-    """Yield an engine, tunnelling over SSH when SSH_HOST is set."""
+    """Yield a read-only engine, tunnelling over SSH when SSH_HOST is set."""
     missing = [k for k in ("DB_HOST", "DB_NAME", "DB_USER") if not env(k)]
     if missing:
         raise RuntimeError(f"Missing in .env: {', '.join(missing)}")
