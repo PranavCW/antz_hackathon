@@ -148,4 +148,9 @@ Done since last sprint · plan for this sprint · blocked on · cut anything? Re
 ### Decision log
 | Date | Decision | Why |
 |---|---|---|
-| | | |
+| 2026-10-01 | S1 done on `admin_zoolive` zoo 11: schema 41/41 ✓, 39 sources extracted, clean + profile run, 105 unit tests green | Sprint 1 |
+| 2026-10-01 | Dev DB is QA data (test types/units/notes; ~⅓ of note texts "test…") → pipeline validated on it, but **headline numbers need a real zoo snapshot** | `outputs/data_quality.md` |
+| 2026-10-01 | Zoo-created weight types opt-in by id (`weight.extra_assessment_type_ids`), default none | all ~35 on Dev are test types |
+| 2026-10-01 | Unit-slip fix only against a stable ±180 d reference, tolerance 5% (was 10%) | 10% "corrected" real doubling and mixed-unit series (86 → 8 fixes) |
+| 2026-10-01 | M1 gated on cases among *monitorable* animals, not all animals of a species | 1,058 raw "cases" vs 61 on animals with usable weights |
+| 2026-10-01 | Leftover detector: **not viable** on this DB (15/246 wastage rows on solo days, 0 intake-monitorable animals) → cut order #3 unless the real snapshot differs | S1-5 / B3 |

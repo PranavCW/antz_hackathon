@@ -39,6 +39,26 @@ with `convertToUTC()` (`app/Common.php:63`) *except where noted*. Soft delete is
 (`is_deleted` / `active` / `is_active`), never CI4 soft-deletes. Declared FKs are unreliable (some point to a
 non-existent `antz_animal`) — join on columns as listed.
 
+> **Live-schema findings (S1-1, `admin_zoolive`, 2026-10-01; full audit in `outputs/schema_check.md`).**
+> All 41 tables/columns below exist. Corrections to this dictionary, applied inline:
+> - **No `zoo_id`** on `antz_animal_assessments`, `antz_animal_measurement`, `antz_animals_mortality`,
+>   `antz_movement_animal_mapping` → scope through `antz_animals.zoo_id`.
+> - `antz_taxonomic_units.tsn` is **not unique** (zoos add renamed rows per tsn) → prefer the global
+>   (`zoo_id=0`) row for names.
+> - Enclosure master is `antz_zoo_enclosure` (no `antz_enclosure`). Incidents link to animals via
+>   `antz_animal_incident(animal_id, incident_id)`. Pre-anaesthesia weights link via
+>   `antz_hospital_anaesthesia.hospital_case_id` → `antz_hospital_medical_animal_mapping.animal_id`.
+> - Coded values are dirtier than documented: severity also `Low`, `Medium`, `Mildd`, `Milds`, `Undetermined`,
+>   `''`; prognosis also `favorable`; `duration_unit` is capitalised (`Days`/`Weeks`/`Months`);
+>   `manner_of_death.string_id` has `Euthanasia` (capitalised, inactive) and unmapped zoo values
+>   (`suicide`, `murders`, `fever`, `test_N`…) → match case-insensitively, report unmapped.
+> - `antz_medical_record.case_type` holds the **master id as a string** (`'1'` = standard), not the string_id;
+>   `created_for` can be `''`. Hospital `treatment_type` is free text; `visit_type` and `health_status` are often NULL.
+> - Zero dates (`0000-00-00`) and `1970-01-01` occur in `record_date`, `birth_date`, `follow_up_date` → NaT at extract.
+> - ⚠️ **The Dev DB is QA data for zoo 11**: zoo-created weight types/units, note types and a third of note
+>   texts are test strings ("asdf", "Testt", "t16"); wastage notes are "Test". The pipeline runs end-to-end on
+>   it, but **backtest numbers from this DB are not meaningful** — a real (anonymised) zoo snapshot is needed.
+
 ### 1.1 Animal master — `antz_animals`
 | Column | Meaning | Use |
 |---|---|---|
@@ -63,7 +83,9 @@ non-existent `antz_animal`) — join on columns as listed.
   `created_at`); after that both tables receive different rows.
 - Weight type: `antz_master_assessments_types` — global `string_id='weight'` (id 1 live) **plus zoo-created
   types** like "Body Weight" (`zoo_id=<zoo>`, `measurement_type='weight'`) that
-  `getAssessmentWeightID()` (app/Common.php:2005) misses.
+  `getAssessmentWeightID()` (app/Common.php:2005) misses. Zoo types are **opt-in by id**
+  (`weight.extra_assessment_type_ids`): on the Dev DB all ~35 are test types.
+- Legacy `measurement_type_id` → `antz_master_measurement_type` (id 1 = "body weight").
 
 **Units (`antz_master_measurement_units`, `measurement_type='weight'`)** — base unit = gram:
 | unit | factor → g | | unit | factor → g |
@@ -141,10 +163,11 @@ One note → many animals/enclosures. Attribution rule:
 - section/site tags → ignored (too broad).
 
 **`antz_observation_type_mapping` + `antz_observation_type_master`** (category): parent/child types; seeded
-parents are maintenance-oriented (Enclosure, Plantation, **Diet**, Plumbing, Electrical, Carpentry,
-**Medical**, Pharmacy, Civil, Fabrication, HR, House Keeping, Other); zoos add their own
-(e.g. Behaviour, Enrichment, Feeding). Filter `deleted_on IS NULL`, `zoo_id IN (0, :zoo)`. Used as LLM
-context + to skip pure maintenance notes (Plumbing/Electrical/Civil/…) before the LLM (saves time).
+parents (live, `zoo_id=0`): **Feeding and Diet**, **Medical** (children Sick, Dull, Inactive, Changes in
+Appetite, Abnormal Behavior, …), Hygiene, Carpentry, Metal Work, Plumbing Issues, Electrical, Housekeeping,
+Horticulture, General; zoos add their own. Filter `deleted_on IS NULL` on the mapping, `zoo_id IN (0, :zoo)`
+on the master. Used as LLM context + to skip notes whose parents are **all** maintenance
+(`notes.skip_note_types`, by string_id) before the LLM (saves time).
 
 **`antz_observation_note`** (comment thread): `observation` LONGTEXT = comment text, `created_at`, `active`.
 Flat thread → concatenated in time order and decoded with the parent note (keepers often add
@@ -251,8 +274,8 @@ too little data are reported "not monitorable", not "healthy").
 |---|---|---|
 | ≤0 / empty / non-numeric | parse fails | safe-parse or drop |
 | Unit not weight / unresolvable | unit category / base chain (§1.2) | drop, flag |
-| kg↔g slip | ratio to animal median ≈ 1000 / 0.001 | ÷/×1000, flag `corrected_unit` |
-| kg↔lb slip | ratio ≈ 2.2046 / 0.4536 | convert, flag |
+| kg↔g slip | ratio to median of the animal's other readings within ±180 d ≈ 1000 / 0.001 (±5%), **only if that reference is stable** (≥75% within ±30% of it) | ÷/×1000, flag `corrected_unit` |
+| kg↔lb slip | ratio ≈ 2.2046 / 0.4536, same conditions (±10% caught real doubling; mixed-unit series have no usable reference) | convert, flag |
 | Typo (18 or 1800 for a 180 kg tiger) | outside species band (1st–99th pct of adults in zoo × 0.5–1.5) | drop |
 | One-off spike (180,181,**150**,179) | **Hampel filter** (>3 robust SD from neighbours' median) **and** next reading back to normal | drop |
 | Real drop (180,181,**165**,**163**) | next reading confirms | **keep — signal** |
