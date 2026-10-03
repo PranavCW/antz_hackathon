@@ -154,3 +154,8 @@ Done since last sprint · plan for this sprint · blocked on · cut anything? Re
 | 2026-10-01 | Unit-slip fix only against a stable ±180 d reference, tolerance 5% (was 10%) | 10% "corrected" real doubling and mixed-unit series (86 → 8 fixes) |
 | 2026-10-01 | M1 gated on cases among *monitorable* animals, not all animals of a species | 1,058 raw "cases" vs 61 on animals with usable weights |
 | 2026-10-01 | Leftover detector: **not viable** on this DB (15/246 wastage rows on solo days, 0 intake-monitorable animals) → cut order #3 unless the real snapshot differs | S1-5 / B3 |
+| 2026-10-02 | Keep building on Dev QA data; real zoo snapshot later. DB is never written: only `*_check`/`extract` read it, all later stages run from parquet | user decision |
+| 2026-10-03 | S2 cases: records mapped to > 5 animals are batch treatments, not cases (`labels.max_animals_per_record`); 826 of 1,611 cases are deaths with no prior vet record (T0 = death) — report separately in backtest | 711-animal records exist |
+| 2026-10-03 | S2 detectors: weight fires at ≤ −5% vs 180 d median or ≤ −3 %/month Theil-Sen; juveniles on stalled growth. Only 7% of readings have a usable baseline → 3 cases covered, all fired (M2 GO mechanically; test-data weights are noise) | `outputs/detector_cases.md` |
+| 2026-10-03 | S2 notes LLM: qwen2.5:7b, prompt v1 with 6 few-shots → 19/20 on a synthetic check set (`tests/data/notes_sample.json`); miss = "did not come down for feed" not read as appetite. Lexicon negation limited to the same clause | Dev notes are junk, so correctness checked on synthetic notes |
+| 2026-10-03 | S2-6 gold sheet generated (`data/processed/notes_gold.csv`) — **labels need a human** | not filled by Claude to keep the audit independent |

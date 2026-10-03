@@ -13,6 +13,8 @@ pandas
 numpy
 pyarrow
 pyyaml
+rapidfuzz           # verbatim-evidence check on LLM quotes
+matplotlib          # detector plots for case review
 
 # Tests
 pytest

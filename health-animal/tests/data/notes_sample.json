@@ -1,0 +1,22 @@
+[
+ {"species": "Bengal tiger", "text": "Did not eat his meat today, only drank water.", "expected_worse": ["appetite"], "health_related": true},
+ {"species": "Bengal tiger", "text": "Ate full ration, active and playing with enrichment ball.", "expected_worse": [], "health_related": true},
+ {"species": "Asiatic lion", "text": "Limping on right hind leg while walking to the moat.", "expected_worse": ["mobility"], "health_related": true},
+ {"species": "Asiatic lion", "text": "No limping observed today, gait normal.", "expected_worse": [], "health_related": true},
+ {"species": "Assam macaque", "text": "Vomited twice in the morning and has loose stool.", "expected_worse": ["gi"], "health_related": true},
+ {"species": "Assam macaque", "text": "Isolating from the troop, sitting alone in the corner, looks dull.", "expected_worse": ["behaviour"], "health_related": true},
+ {"species": "Blue-and-yellow macaw", "text": "Feather plucking on chest, small bald patch visible.", "expected_worse": ["skin_injury"], "health_related": true},
+ {"species": "Blue-and-yellow macaw", "text": "Sneezing and slight nasal discharge noticed.", "expected_worse": ["respiratory"], "health_related": true},
+ {"species": "Indian elephant", "text": "Swelling on left front foot, reluctant to put weight on it.", "expected_worse": ["mobility", "skin_injury"], "health_related": true},
+ {"species": "Indian elephant", "text": "Electric fence charger not working, technician called.", "expected_worse": [], "health_related": false},
+ {"species": "Sambar deer", "text": "Looks thin, ribs visible, left most of the concentrate feed.", "expected_worse": ["appetite", "body_condition"], "health_related": true},
+ {"species": "Sambar deer", "text": "Small cut on the neck, no bleeding, eating normally.", "expected_worse": ["skin_injury"], "health_related": true},
+ {"species": "Leopard", "text": "Aaj khana nahi khaya, bahut sust hai", "expected_worse": ["appetite", "behaviour"], "health_related": true},
+ {"species": "Leopard", "text": "Enclosure cleaned and disinfected, water bowl changed.", "expected_worse": [], "health_related": false},
+ {"species": "Sloth bear", "text": "Coughing at night, breathing looks heavy.", "expected_worse": ["respiratory"], "health_related": true},
+ {"species": "Sloth bear", "text": "Wound on the paw is healing well, swelling reduced.", "expected_worse": [], "health_related": true},
+ {"species": "Gharial", "text": "Test", "expected_worse": [], "health_related": false},
+ {"species": "Gharial", "text": "asdf qwerty", "expected_worse": [], "health_related": false},
+ {"species": "Hoolock gibbon", "text": "Very lethargic, not responding to keeper calls, did not come down for feed.", "expected_worse": ["appetite", "behaviour"], "health_related": true},
+ {"species": "Hoolock gibbon", "text": "Diarrhoea has stopped, stool normal today.", "expected_worse": [], "health_related": true}
+]
