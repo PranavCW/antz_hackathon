@@ -136,7 +136,10 @@ def run() -> None:
     scorers = ["risk_rules"] + (["risk_logreg"] if pred["risk_logreg"].notna().any() else [])
     primary = "risk_" + summary["primary_scorer"]
 
-    train, test = pred[pred["period"] == "train"], pred[pred["period"] == "test"]
+    # Replay every grid day, not just labelled ones: labels drop the 15–60 d grey zone before each case, which is
+    # exactly where early alerts have to be visible. Same boundaries as the model's time split (purge gap between).
+    purge = pd.Timedelta(days=clear)
+    train, test = pred[pred["date"] < split - purge], pred[pred["date"] >= split]
     t_start, t_end = test["date"].min(), test["date"].max()
     tr_start, tr_end = train["date"].min(), train["date"].max()
 
@@ -233,10 +236,11 @@ def run() -> None:
         report += [f"- {'**(primary)** ' if 'risk_' + h['scorer'] == primary else ''}{h['line']}",
                    f"  - missed vet-aware cases: {h['missed'] or 'none'}; threshold {h['threshold']}"
                    + ("" if h["within_budget_on_train"] else " (⚠️ even the highest threshold exceeded the budget on train)")]
+    if not summary["verdict"].startswith("GO"):
+        report.append("\n> Read with the model verdict above: the logistic model did not clearly beat the rules "
+                      "(see `outputs/model_report.md`), so treat these numbers as a demonstration that the machinery "
+                      "works end to end, not as proof the system works.")
     report += [
-        "\n> Read with the model verdict above: on the Dev QA zoo the signal features carry no information "
-        "(see `outputs/model_report.md`), so these numbers demonstrate that the machinery works end to end — "
-        "not that the system works on a real zoo.",
         "\n## Case outcomes (test period)\n",
         _md_table(pd.DataFrame(case_rows).groupby(["scorer", "kind", "caught"]).size().rename("cases").reset_index()),
         f"\nAlerts with reasons: `outputs/backtest_alerts.csv` ({len(alerts_df):,} rows). Sweep curves: `outputs/backtest_sweep.csv`.",

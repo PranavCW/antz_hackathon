@@ -94,7 +94,8 @@ def other_rows(wastage_rows, assessments, incidents, animals, tz):
                  available_date=pd.concat([a_date, local_day(a["created_at"], tz)], axis=1).max(axis=1),
                  attribution="animal", drop_reason=None)
 
-    i = incidents[incidents["notes"].fillna("").str.strip().ne("") & (incidents["is_deleted"] == 0)]
+    live = (incidents["is_deleted"] == 0) & (incidents["incident_is_deleted"].fillna(0) == 0)
+    i = incidents[incidents["notes"].fillna("").str.strip().ne("") & live]
     i_date = local_day(i["incident_date"].fillna(i["created_at"]), tz)
     i = i.assign(source="incident", source_id=i["id"], text=i["notes"].str.strip(), date=i_date,
                  available_date=pd.concat([i_date, local_day(i["created_at"], tz)], axis=1).max(axis=1),

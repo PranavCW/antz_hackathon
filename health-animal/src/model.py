@@ -86,16 +86,25 @@ def predict(scaler, clf, X: np.ndarray) -> np.ndarray:
     return clf.predict_proba(scaler.transform(X))[:, 1]
 
 
-def grouped_oof(X, y, groups, C, seed, n_splits=5) -> np.ndarray:
-    """Out-of-fold probabilities with whole animals held out together."""
+def grouped_oof(X, y, groups, C, seed, n_splits=5, X_extra=None, g_extra=None):
+    """Out-of-fold probabilities with whole animals held out together.
+
+    With X_extra / g_extra (unlabelled rows of the same period) returns (oof, oof_extra): each extra row is scored
+    by the fold model that did not see its animal; animals absent from `groups` stay NaN.
+    """
     oof = np.full(len(y), np.nan)
+    oof_extra = np.full(0 if X_extra is None else len(X_extra), np.nan)
     n_splits = min(n_splits, len(np.unique(groups)))
     for tr, te in GroupKFold(n_splits=n_splits).split(X, y, groups):
         if y[tr].sum() < 2 or y[tr].sum() == len(tr):
             continue
         scaler, clf = fit_logreg(X[tr], y[tr], C, seed)
         oof[te] = predict(scaler, clf, X[te])
-    return oof
+        if X_extra is not None:
+            hit = np.isin(g_extra, np.unique(groups[te]))
+            if hit.any():
+                oof_extra[hit] = predict(scaler, clf, X_extra[hit])
+    return oof if X_extra is None else (oof, oof_extra)
 
 
 def pr_auc(y, s) -> float:
@@ -173,7 +182,11 @@ def run() -> None:
     # 2. Final train-period model; out-of-fold scores for train rows, model scores for everything else
     scaler, clf = fit_logreg(X[tr], ytr, best_C, mcfg["random_seed"])
     risk = predict(scaler, clf, X)
-    risk[tr.to_numpy()] = grouped_oof(X[tr], ytr, gtr, best_C, mcfg["random_seed"])
+    # Every row in the training period gets an out-of-fold score, labelled or not (the backtest replays them all)
+    early = (df["date"] < split - pd.Timedelta(days=cfg["labels"]["negative_clear_days"])).to_numpy()
+    extra = early & ~tr.to_numpy()
+    risk[tr.to_numpy()], risk[extra] = grouped_oof(
+        X[tr], ytr, gtr, best_C, mcfg["random_seed"], X_extra=X[extra], g_extra=df.loc[extra, "animal_id"].to_numpy())
     df["risk_logreg"] = risk
 
     # 3. Held-out metrics

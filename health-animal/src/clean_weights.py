@@ -47,7 +47,10 @@ def parse_value(raw) -> tuple:
         num = num.replace(",", ".")          # decimal comma
     else:
         num = num.replace(",", "")
-    return float(num), SUFFIXES.get(suffix)
+    try:
+        return float(num), SUFFIXES.get(suffix)
+    except ValueError:                           # "1.2.3", "12.05.23": dates and version-like text, not weights
+        return None, None
 
 
 def unit_factors(units: pd.DataFrame) -> pd.DataFrame:

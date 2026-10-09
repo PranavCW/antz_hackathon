@@ -153,3 +153,16 @@ def test_rule_reasons_and_quotes_and_confidence():
     assert explain.confidence(row).startswith("high")
     assert explain.confidence(row.copy().set_axis(row.index).where(row.index != "cov_sources", 0.0)).startswith("low")
     assert explain.alert_text(0.41, ["A", "B"], ["“q”"], "high").startswith("Risk 0.41 — A · B · Notes: “q”")
+
+
+def test_grouped_oof_scores_extra_rows_without_their_animal():
+    import numpy as np
+    from src.model import grouped_oof
+    rng = np.random.default_rng(0)
+    groups = np.repeat(np.arange(10), 20)
+    X = rng.normal(size=(200, 3))
+    y = (X[:, 0] > 1).astype(int)
+    y[:5] = 1
+    Xe, ge = rng.normal(size=(30, 3)), np.repeat(np.arange(3), 10)
+    oof, oof_e = grouped_oof(X, y, groups, 1.0, 0, X_extra=Xe, g_extra=ge)
+    assert np.isfinite(oof_e).all() and len(oof_e) == 30

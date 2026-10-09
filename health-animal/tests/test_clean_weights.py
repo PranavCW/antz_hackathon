@@ -175,3 +175,10 @@ def test_impossible_dates_dropped():
 def test_groups_excluded():
     df = run([180, 181, 182], animals_df=animals(type_="group"))
     assert set(df["drop_reason"]) == {"group_animal"}
+
+
+def test_parse_value_dotted_text_is_not_a_weight():
+    from src.clean_weights import parse_value
+    assert parse_value("1.2.3") == (None, None)
+    assert parse_value("12.05.23") == (None, None)
+    assert parse_value("1,234.5") == (1234.5, None)
