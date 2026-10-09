@@ -211,9 +211,9 @@ def run() -> None:
                      + (f"on average **{m['mean_lead']:.0f} days earlier** (median {m['median_lead']:.0f}), "
                         if m["caught"] else "no lead time (nothing caught), ")
                      + f"at **{m['alerts_per_week']:.1f} alerts/week/zoo** (budget {acfg['max_alerts_per_week']}); "
-                       + (f"{100 * m['precision']:.1f}% of alerts were followed by a case within {clear} d. "
-                          if m["alerts"] else "No alerts fired. ")
-                       f"{mon} of {m['cases']} cases had any data in their early window. "
+                     + (f"{100 * m['precision']:.1f}% of alerts were followed by a case within {clear} d. "
+                        if m["alerts"] else "No alerts fired. ")
+                     + f"{mon} of {m['cases']} cases had any data in their early window. "
                        f"Death-only cases: {m_death['caught']} of {m_death['cases']} flagged."),
             "missed": reasons_cnt})
 
