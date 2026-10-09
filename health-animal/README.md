@@ -16,7 +16,7 @@ history: *"flags X of Y past cases, on average Z days earlier, at ≤ N alerts/w
 | 0 | DB connection (read-only), config, LLM check, stage stubs | ✅ |
 | 1 | Schema check, extract, cleaning (weights, housing, intake, notes), data-quality report, species choice | ✅ |
 | 2 | Cases + T0, weight & leftover detectors, notes LLM batch, gold sheet | ✅ |
-| 3 | Feature table (+ leakage test), rule baseline vs logistic regression, backtest | ⏳ next |
+| 3 | Feature table (+ leakage test), rule baseline vs logistic regression, backtest, alert explanations, LLM audit | ✅ (verified on Dev; numbers not meaningful) |
 | 4 | Streamlit timeline demo, slides | ⏳ |
 
 > ⚠️ **Currently running on Dev test data.** `admin_zoolive` zoo 11 is the QA zoo: test weight types/units,
@@ -93,7 +93,10 @@ Run with `python main.py <stage>` (from `health-animal/`, inside `.venv`). `pyth
 | `detectors` | processed | `data/processed/{detector_weight, detector_intake}`, `outputs/detector_cases.{md,csv}`, `outputs/detectors/*.png` | Layer 1 + did it fire before T0 on known cases (M2) |
 | `notes_llm` | processed + Ollama | `data/processed/{llm_cache.jsonl, notes_decoded, notes_signals}`, `outputs/notes_llm_progress.log` | Decode notes of chosen species; `--sample` = 20-note correctness check; `--limit N` |
 | `notes_gold` | processed | `data/processed/notes_gold.csv` | 50-note hand-labelling sheet (never overwrites a labelled sheet) |
-| `features`, `model`, `backtest` | — | — | Sprint 3 (stubs) |
+| `features` | processed + raw labels | `data/processed/animal_day.parquet`, `outputs/features_summary.md` | Animal-day feature table + labels; runs the **leakage test** and aborts if it fails |
+| `model` | `animal_day` | `predictions.parquet`, `model_logreg.json`, `model_summary.json`, `outputs/model_report.md`, `model_coefficients.csv` | Rule baseline vs logistic regression; time split + grouped CV + ablation; M3 verdict |
+| `backtest` | predictions + cases | `outputs/backtest_report.md`, `backtest_{sweep,cases,alerts}.csv` | Day-by-day replay: cases caught, lead time, alerts/week, missed-case reasons, alerts with explanations |
+| `notes_audit` | gold + decoded notes | `outputs/notes_audit.md` | LLM and lexicon precision/recall per category vs the gold labels |
 
 `data/` and `outputs/` are git-ignored: they hold zoo data and must never be committed.
 
@@ -172,18 +175,40 @@ Why median/MAD: one bad value can't move them (`96,94,97,95,20,…` → mean 87.
   diagnoses.
 - Measured: 19/20 on the synthetic check set (`tests/data/notes_sample.json`); Dev batch 464 notes in ~5 min.
 
-### 4.8 Prediction model and backtest (Sprint 3–4, planned — PLAN §H–I)
-- **Rows**: one per animal-day of the chosen species. **Label** 1 if a case's T0 falls in (d, d+14]; 0 if none
-  within 60 d; days under treatment / grey zone / after death excluded.
-- **Features**: weight % change, slope, confirmed, days since last weight; leftover z, CUSUM, high days in 7,
-  coverage; note signals per category over 7 d, # negative categories, note volume, max priority; species,
-  age class, sex, days since move. **Leakage test**: every feature for day d uses rows ≤ d; no medical tables.
-- **Models**: (1) rule-based scorer (baseline); (2) **regularised logistic regression** with class weights (main —
-  readable contributions → "top 3 reasons"); (3) **LightGBM with monotonic constraints** + SHAP (stretch).
-- **Validation**: time-based split (older → train, newer → test) + leave-one-case-out; metric **PR-AUC**.
-  The model must beat the rules on the held-out period.
-- **Backtest**: replay day by day, alert at risk ≥ threshold with a 7-day cooldown; lead time = T0 − first alert in
-  [T0 − 60 d, T0); false alerts → alerts/week/zoo; threshold sweep under the alert budget; missed-case analysis.
+### 4.8 Features and labels (`src/features.py`, §H)
+One row per (single animal of the chosen species, local day), 37 model inputs (`w_` weight, `i_` intake, `n_` notes,
+`ctx_` context, `cov_` coverage). **Replay rule: a value exists only from the day it was entered** — weights from
+`max(recorded_at, created_at)`, notes/leftovers from `available_date`; a spike is scored as *pending* on its own day
+and only leaves later baselines once the next reading exists. **Leakage test** (runs on every `features` run): rebuild
+the features from inputs truncated at random dates and require identical rows; the test is itself tested with a
+deliberately peeking feature. No medical table can reach `build_features` (its signature has no parameter for one).
+Labels (cases only): `label_vet` = 1 if a vet-aware case starts in (d, d+14], 0 if no case within 60 d, excluded
+(NaN) for days under treatment (+7 d), the 15–60 d grey zone, near trauma/unknown deaths and death-only cases;
+`label_all` also counts death-only cases (T0 = death, no vet record).
+
+### 4.9 Model (`src/model.py`, §H)
+- **Rule scorer (baseline)**: capped sum of firing rules with weights in `model.rule_weights`
+  (weight drop, confirmed, leftover CUSUM, notes in 1 / 2+ categories, High/Critical priority *with* a worse note).
+- **Logistic regression**: standardised features (clipped ±10, scale floor), L2, `class_weight=balanced`, C chosen by
+  grouped CV on the training period.
+- **Validation**: time split (newest 50% held out, 60-day purge so no training label looks into the test period);
+  grouped 5-fold CV by animal over all history; bootstrap over animals for the PR-AUC difference vs the rules.
+  Metric PR-AUC (prevalence shown as the random baseline).
+- **Ablation + verdict**: the same model on *context/coverage only* vs *health signals only*. The logistic model is
+  the primary scorer only if it beats the rules (95% interval above 0) **and** the health signals beat context
+  (`NOT CREDIBLE` otherwise — it would be learning who gets observed, not who gets sick). The backtest reads
+  `model_summary.json` to know which scorer is the result.
+- Explanations (`src/explain.py`): logistic → top-3 positive contributions (coef × standardised value) as readable
+  clauses; rules → the rules that fired; plus recent keeper quotes and a data-confidence line.
+- Stretch (not built): LightGBM with monotonic constraints + SHAP.
+
+### 4.10 Backtest (`src/backtest.py`, §I)
+Replay: alert when risk ≥ threshold, 7-day cooldown per animal (re-alert if risk rose ≥ 50%), no alerts under
+treatment. **Caught** = an alert in [T0 − 60 d, T0); **lead** = T0 − first such alert; **false alert** = no case
+within 60 d → alerts/week/zoo. The **threshold is chosen on the older period with out-of-fold scores to maximise
+cases caught under the alert budget, then applied unchanged to the newer period**. Reports a random-alert baseline at
+the same volume, a missed-case analysis (`no_data` / `no_signal` / `below_threshold`), vet-aware vs death-only cases
+separately, and every alert with its explanation. The headline sentence is generated from these numbers.
 
 ---
 
@@ -212,7 +237,11 @@ Tuning (species, windows, thresholds) lives in `config/config.yaml`; connection 
 .venv/bin/python main.py notes_llm --sample
 .venv/bin/python main.py notes_llm         # batch; tail -f outputs/notes_llm_progress.log
 .venv/bin/python main.py notes_gold
-.venv/bin/python -m pytest tests           # 127 tests: cleaning rules, housing, intake, notes, cases, detectors, LLM helpers, read-only guard
+.venv/bin/python main.py features        # prints the leakage-test result; fails loudly on leakage
+.venv/bin/python main.py model            # read the M3 verdict in outputs/model_report.md
+.venv/bin/python main.py backtest         # headline in outputs/backtest_report.md
+.venv/bin/python main.py notes_audit
+.venv/bin/python -m pytest tests           # 151 tests: cleaning, housing, intake, notes, cases, detectors, LLM helpers, features/labels/leakage, model, backtest, explanations, read-only guard
 ```
 
 ---
@@ -246,8 +275,12 @@ with a review at each checkpoint.
    `mv data/processed/notes_gold.csv data/processed/notes_gold_provisional.csv`, run `notes_gold`, and have a
    keeper/vet-literate person fill the 50 rows. If the real notes are in other languages, add few-shots and bump
    `PROMPT_VERSION`.
-10. **Sprint 3–4** — features (leakage test must pass), model vs rules on the held-out period, backtest, demo.
-    Agree the alert budget (`alerting.max_alerts_per_week`) with the vets before the threshold sweep.
+10. **Features → model → backtest** — `features` (leakage test must pass), `model`, `backtest`. Read the M3
+    verdict first: only `GO` means the logistic model is the result; `NOT CREDIBLE`/`NO-GO` means present the rule
+    scorer and say the model needs more data. Agree the alert budget (`alerting.max_alerts_per_week`) with the vets
+    *before* looking at the sweep. If `labels.start_date` is null the grid starts at the first vet record in the
+    extract — set it if the zoo only started recording medical data later than animals.
+11. **Sprint 4** — Streamlit timeline demo + slides (planned).
 
 ---
 
@@ -263,7 +296,8 @@ with a review at each checkpoint.
 | `labels` | horizon 14 d; negatives clear 60 d; episode merge 14 d; euthanasia lookback 60 d; min severity/prognosis; max animals per record |
 | `manner_of_death` | string_id → illness / euthanasia / trauma / unknown / junk |
 | `profile` | window 730 d; min monitorable animals; 3–5 species |
-| `alerting`, `model` | cooldown, alert budget; time-split fraction, seed |
+| `alerting` | cooldown 7 d, rise factor, alert budget (placeholder 3/week/zoo) |
+| `features`, `model` | weight freshness 60 d; target, test fraction, min training positives, `rule_weights` |
 
 ## 9. Known limitations (from the Dev data)
 - Dev DB is QA data: ~⅓ of notes are test strings; zoo-created weight types/units are junk; weights jump between
@@ -273,6 +307,9 @@ with a review at each checkpoint.
   be reported separately in the backtest.
 - Clean drops spikes using the *next* reading; in the backtest replay that reading wasn't known yet, so a spike
   should appear as "pending" until then — handled in the Sprint 3 leakage work.
+- **Backtest on Dev**: 0 of 42 vet-aware held-out cases flagged — 33 have no weight/note/leftover data in their
+  60-day early window, 9 had data but no signal. The M3 verdict is `NOT CREDIBLE` (the logistic model's edge comes
+  from context/coverage, not health signals). These are the machinery working correctly on data that has no signal.
 - One zoo has few cases → wide uncertainty; the production path is a multi-zoo pooled model (PLAN §5).
 
 ## 10. Layout
@@ -285,8 +322,8 @@ health-animal/
 │   ├── config.py, store.py, animals.py  config/paths, parquet IO, shared animal helpers
 │   ├── db_check.py, llm_check.py, schema_check.py, extract.py
 │   ├── clean.py → clean_weights.py, housing.py, intake.py, clean_notes.py
-│   ├── profile.py, cases.py, detectors.py, notes_llm.py, notes_gold.py
-│   └── features.py, model.py, backtest.py     (Sprint 3 stubs)
+│   ├── profile.py, cases.py, detectors.py, notes_llm.py, notes_gold.py, notes_audit.py
+│   └── features.py, model.py, explain.py, backtest.py
 ├── tests/               pytest suites + data/notes_sample.json (synthetic LLM check set)
 ├── docs/                PLAN.md, SPRINT_PLAN.md
 ├── data/raw, data/processed, outputs/   (git-ignored)

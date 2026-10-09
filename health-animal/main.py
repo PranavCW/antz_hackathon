@@ -18,6 +18,7 @@ STAGES = [
     ("detectors", "Weight and leftover baselines, z-scores, CUSUM"),
     ("notes_llm", "Decode keeper notes with a self-hosted open-source LLM"),
     ("notes_gold", "Write a 50-note hand-labelling sheet for the LLM audit"),
+    ("notes_audit", "Audit LLM and lexicon against the hand-labelled gold notes"),
     ("features", "Animal-day feature table (past data only)"),
     ("model", "Rule baseline, logistic regression, LightGBM"),
     ("backtest", "Replay history, lead time, alerts per week"),

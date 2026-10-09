@@ -85,3 +85,16 @@ def test_intake_detector_needs_10_days_and_flags_rising_leftovers():
     d = detectors.intake_detector(daily, ICFG, DCFG)
     assert (d["status"].iloc[:10] == "insufficient_data").all() and (d["status"].iloc[10:] == "ok").all()
     assert not d["cusum_flag"].iloc[:12].any() and d["cusum_flag"].iloc[12]
+
+
+def test_causal_mode_scores_spike_as_pending_then_excludes_it_from_baselines():
+    w = weights([180, 181, 180, 150, 179, 180], [0, 14, 28, 42, 56, 70])
+    w["drop_reason"] = None
+    w.loc[3, ["kept", "drop_reason"]] = [False, "spike"]
+    plain = detectors.weight_detector(w, WCFG, DCFG)
+    causal = detectors.weight_detector(w, WCFG, DCFG, causal=True)
+    assert len(plain) == 5 and len(causal) == 6                          # spike is only scored in the replay view
+    spike = causal.iloc[3]
+    assert spike["pct_change"] == pytest.approx(100 * (150 - 180) / 180) and spike["fired"]   # visible on its own day
+    assert causal.iloc[4]["n_baseline"] == 3                              # 3 kept readings; the spike (would be 4) is out
+    assert (causal.iloc[4]["baseline_g"] == 180) and not causal.iloc[4]["fired"]

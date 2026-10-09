@@ -17,7 +17,7 @@ def enclosure_day(rows):
 
 def wastage(rows):
     df = pd.DataFrame(rows, columns=["id", "enclosure_id", "date", "leftover_g", "notes"])
-    return df.assign(drop_reason=None)
+    return df.assign(drop_reason=None, created_at=df["date"])
 
 
 def test_missing_wastage_day_is_unknown_not_zero():

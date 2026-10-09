@@ -15,6 +15,7 @@ pyarrow
 pyyaml
 rapidfuzz           # verbatim-evidence check on LLM quotes
 matplotlib          # detector plots for case review
+scikit-learn        # logistic regression, PR-AUC
 
 # Tests
 pytest

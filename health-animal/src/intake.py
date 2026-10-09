@@ -53,7 +53,8 @@ def _diet_segment(df: pd.DataFrame, changes: pd.DataFrame) -> pd.Series:
     return pd.Series(seg, index=df.index)
 
 
-def daily_intake(w: pd.DataFrame, enclosure_day: pd.DataFrame, changes: pd.DataFrame, min_logging_rate: float):
+def daily_intake(w: pd.DataFrame, enclosure_day: pd.DataFrame, changes: pd.DataFrame, min_logging_rate: float,
+                 tz: str = "UTC"):
     """Returns (intake_daily per solo animal-day, coverage per animal × diet segment, wastage rows with reasons)."""
     w = w.merge(enclosure_day, on=["enclosure_id", "date"], how="left")
     live = w["drop_reason"].isna()
@@ -64,9 +65,13 @@ def daily_intake(w: pd.DataFrame, enclosure_day: pd.DataFrame, changes: pd.DataF
     ok = w[w["drop_reason"].isna()].rename(columns={"animal_id_if_solo": "animal_id"})
     daily = (ok.groupby(["animal_id", "enclosure_id", "date"])
                .agg(leftover_g=("leftover_g", "sum"), n_entries=("leftover_g", "size"),
-                    has_note=("notes", lambda s: s.fillna("").str.strip().ne("").any()))
+                    has_note=("notes", lambda s: s.fillna("").str.strip().ne("").any()),
+                    created_at=("created_at", "max"))
                .reset_index())
     daily["animal_id"] = daily["animal_id"].astype(int)
+    # A leftover day is visible to a replay from the day its last entry was inserted (entries can be backdated)
+    daily["available_date"] = pd.concat([daily["date"], local_day(daily["created_at"], tz)], axis=1).max(axis=1)
+    daily = daily.drop(columns="created_at")
     daily["diet_segment"] = _diet_segment(daily, changes)
 
     # Coverage: logged days / solo high-confidence days, per animal and diet segment

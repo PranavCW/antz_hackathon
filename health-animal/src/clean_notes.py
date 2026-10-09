@@ -39,6 +39,8 @@ def observation_rows(obs, mapping, comments, type_mapping, types, enclosure_day,
     fixed = edited & (created_day < o["date"])
     o.loc[fixed, "date"] = created_day[fixed]
     o["date_fixed"] = fixed
+    # A note is visible to a replay only from the day it was entered (created_for can be backdated)
+    o["available_date"] = pd.concat([o["date"], created_day], axis=1).max(axis=1)
 
     # Comment thread, flat, in time order, appended to the note body
     c = comments[comments["active"] == 1].sort_values("created_at")
@@ -73,29 +75,33 @@ def observation_rows(obs, mapping, comments, type_mapping, types, enclosure_day,
     maintenance = parents.ne("") & parents.str.split(";").map(lambda ps: all(p in skip_types for p in ps))
     rows.loc[rows["drop_reason"].isna() & maintenance, "drop_reason"] = "maintenance_type"
     return rows.assign(source="observation", source_id=rows["observation_id"])[
-        ["source", "source_id", "animal_id", "date", "text", "priority", "parent_types", "child_types",
-         "attribution", "weight", "date_fixed", "drop_reason"]]
+        ["source", "source_id", "animal_id", "date", "available_date", "text", "priority", "parent_types",
+         "child_types", "attribution", "weight", "date_fixed", "drop_reason"]]
 
 
 def other_rows(wastage_rows, assessments, incidents, animals, tz):
     """Free text from wastage (solo enclosure-days only), weighing comments and incidents."""
     w = wastage_rows[wastage_rows["notes"].fillna("").str.strip().ne("")]
     w = w.assign(source="food_wastage", source_id=w["id"], animal_id=w["animal_id_if_solo"], text=w["notes"].str.strip(),
+                 available_date=pd.concat([w["date"], local_day(w["created_at"], tz)], axis=1).max(axis=1),
                  attribution=np.where(w["animal_id_if_solo"].notna(), "solo_enclosure", None),
                  drop_reason=w["drop_reason"])
     w.loc[w["drop_reason"].isna() & w["animal_id"].isna(), "drop_reason"] = "not_attributable"
 
     a = assessments[assessments["comments"].fillna("").str.strip().ne("") & (assessments["is_deleted"] == 0)]
-    a = a.assign(source="assessment_comment", source_id=a["id"], text=a["comments"].str.strip(),
-                 date=local_day(a["recorded_date_time"].fillna(a["created_at"]), tz), attribution="animal",
-                 drop_reason=None)
+    a_date = local_day(a["recorded_date_time"].fillna(a["created_at"]), tz)
+    a = a.assign(source="assessment_comment", source_id=a["id"], text=a["comments"].str.strip(), date=a_date,
+                 available_date=pd.concat([a_date, local_day(a["created_at"], tz)], axis=1).max(axis=1),
+                 attribution="animal", drop_reason=None)
 
     i = incidents[incidents["notes"].fillna("").str.strip().ne("") & (incidents["is_deleted"] == 0)]
-    i = i.assign(source="incident", source_id=i["id"], text=i["notes"].str.strip(),
-                 date=local_day(i["incident_date"].fillna(i["created_at"]), tz), attribution="animal",
-                 drop_reason=None)
+    i_date = local_day(i["incident_date"].fillna(i["created_at"]), tz)
+    i = i.assign(source="incident", source_id=i["id"], text=i["notes"].str.strip(), date=i_date,
+                 available_date=pd.concat([i_date, local_day(i["created_at"], tz)], axis=1).max(axis=1),
+                 attribution="animal", drop_reason=None)
 
-    out = pd.concat([w, a, i])[["source", "source_id", "animal_id", "date", "text", "attribution", "drop_reason"]]
+    out = pd.concat([w, a, i])[["source", "source_id", "animal_id", "date", "available_date", "text", "attribution",
+                                "drop_reason"]]
     out["weight"] = np.where(out["animal_id"].notna(), 1.0, np.nan)
     out.loc[out["drop_reason"].isna() & ~out["animal_id"].isin(animals["animal_id"]), "drop_reason"] = "animal_not_in_zoo"
     return out

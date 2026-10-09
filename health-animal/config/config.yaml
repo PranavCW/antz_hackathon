@@ -60,6 +60,8 @@ labels:                      # H, I
   early_window_days: 60      # alerts in [T0−60, T0) count as early
   min_severity: High
   min_prognosis: poor
+  treatment_buffer_days: 7   # days after the last record still counted as "under treatment" (excluded)
+  start_date: null           # first day labels are trustworthy; null = first vet record in the extract
   max_animals_per_record: 5  # records mapped to more animals are batch treatments, not individual cases
 
 manner_of_death:             # §1.5 — verify string_ids with SELECT DISTINCT in schema_check
@@ -76,8 +78,21 @@ profile:                     # §3 03_profile, B6
 
 alerting:                    # H, I
   cooldown_days: 7
+  rise_factor: 0.5           # inside the cooldown, alert again only if risk is ≥ 1.5× the last alert's
   max_alerts_per_week: 3     # placeholder budget; agree with vets before the backtest sweep
 
+features:                    # H
+  weight_max_age_days: 60    # a weight older than this no longer feeds the weight features (§B2)
+
 model:                       # H
+  target: label_vet          # label_vet = vet-aware cases only; label_all also counts death-only cases
   test_fraction: 0.5         # newest half of history held out (time split)
+  min_train_positives: 10    # fewer → no logistic model, the rule scorer is the result
   random_seed: 42
+  rule_weights:              # baseline scorer: capped sum of firing rules (the model must beat this)
+    weight_fired: 0.30
+    weight_confirmed: 0.20
+    intake_cusum: 0.30
+    notes_one_category: 0.20
+    notes_two_categories: 0.15
+    priority_high: 0.10

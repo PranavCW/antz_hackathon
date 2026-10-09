@@ -54,9 +54,14 @@ def cusum(dates: pd.Series, z: pd.Series, k: float, h: float, max_missing: int) 
 
 # ── Weight ───────────────────────────────────────────────────────────────────────────────────────────────
 
-def weight_detector(weights: pd.DataFrame, wcfg: dict, dcfg: dict) -> pd.DataFrame:
-    """One row per kept reading with baseline, % change, slope, confirmation and fired flag."""
-    w = weights[weights["kept"]].sort_values(["animal_id", "recorded_at"])
+def weight_detector(weights: pd.DataFrame, wcfg: dict, dcfg: dict, causal: bool = False) -> pd.DataFrame:
+    """One row per reading with baseline, % change, slope, confirmation and fired flag.
+
+    causal=True is the replay view: a one-off spike is only recognised once the *next* reading arrives, so at its
+    own time it is scored as a pending reading (kept in the output) but never enters any later baseline.
+    """
+    keep = weights["kept"] | (weights["drop_reason"].eq("spike") if causal else False)
+    w = weights[keep].sort_values(["animal_id", "recorded_at"])
     window, recent = pd.Timedelta(days=wcfg["baseline_days"]), pd.Timedelta(days=wcfg["min_readings_last_days"])
     rows = []
     for animal_id, g in w.groupby("animal_id"):
@@ -64,9 +69,10 @@ def weight_detector(weights: pd.DataFrame, wcfg: dict, dcfg: dict) -> pd.DataFra
         day = g["local_date"].to_numpy()
         v = g["value_g"].to_numpy(float)
         juvenile = g["is_juvenile"].fillna(False).to_numpy(bool)
+        usable = g["kept"].to_numpy(bool)          # spikes (causal mode) are scored but never form a baseline
         prev_dev = 0.0
         for i in range(len(v)):
-            base = (t >= t[i] - window) & (day < day[i])            # previous 180 d, excluding today
+            base = (t >= t[i] - window) & (day < day[i]) & usable   # previous 180 d, excluding today
             n_base = int(base.sum())
             has_recent = bool(((t >= t[i] - recent) & base).any())
             row = {"animal_id": animal_id, "recorded_at": t[i], "local_date": day[i], "value_g": v[i],

@@ -56,7 +56,7 @@ def run() -> None:
     wastage = intake.clean_wastage(raw("food_wastage"), units, tz)
     changes = intake.diet_change_dates(raw("diet_assign_logs"), animals, tz)
     intake_daily, coverage, wastage = intake.daily_intake(wastage, enclosure_day, changes,
-                                                          cfg["intake"]["min_logging_rate"])
+                                                          cfg["intake"]["min_logging_rate"], tz)
     store.write("processed", "wastage_clean", wastage)
     store.write("processed", "intake_daily", intake_daily)
     store.write("processed", "intake_coverage", coverage)
