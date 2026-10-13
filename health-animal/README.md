@@ -181,7 +181,9 @@ One row per (single animal of the chosen species, local day), 37 model inputs (`
 `max(recorded_at, created_at)`, notes/leftovers from `available_date`; a spike is scored as *pending* on its own day
 and only leaves later baselines once the next reading exists. **Leakage test** (runs on every `features` run): rebuild
 the features from inputs truncated at random dates and require identical rows; the test is itself tested with a
-deliberately peeking feature. No medical table can reach `build_features` (its signature has no parameter for one).
+deliberately peeking feature. It covers the feature stage only: the clean stage runs on the full history (unit-slip
+reference ±180 d, species-band percentiles, two-sided dedup/Hampel neighbours), so cleaned values can carry a little
+future information. Truncation is by zoo-local day. No medical table can reach `build_features` (its signature has no parameter for one).
 Labels (cases only): `label_vet` = 1 if a vet-aware case starts in (d, d+14], 0 if no case within 60 d, excluded
 (NaN) for days under treatment (+7 d), the 15–60 d grey zone, near trauma/unknown deaths and death-only cases;
 `label_all` also counts death-only cases (T0 = death, no vet record).
@@ -241,7 +243,7 @@ Tuning (species, windows, thresholds) lives in `config/config.yaml`; connection 
 .venv/bin/python main.py model            # read the M3 verdict in outputs/model_report.md
 .venv/bin/python main.py backtest         # headline in outputs/backtest_report.md
 .venv/bin/python main.py notes_audit
-.venv/bin/python -m pytest tests           # 151 tests: cleaning, housing, intake, notes, cases, detectors, LLM helpers, features/labels/leakage, model, backtest, explanations, read-only guard
+.venv/bin/python -m pytest tests           # 154 tests: cleaning, housing, intake, notes, cases, detectors, LLM helpers, features/labels/leakage, model, backtest, explanations, read-only guard
 ```
 
 ---

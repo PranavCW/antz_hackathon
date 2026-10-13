@@ -11,6 +11,9 @@ Replay rules — a value is visible from the day it was *entered*, never earlier
   leftovers: available_date of the day's last entry
 Medical/hospital/mortality tables are labels only: `build_features` has no parameter that could carry them, and
 `leakage_check` re-derives features from inputs truncated at random dates and requires identical values.
+Scope of that check: it truncates the already-cleaned tables, so it proves the feature/detector code is causal but NOT
+the clean stage, which sees the full history (unit-slip reference ±180 d, species band percentiles, dedup and Hampel
+neighbours on both sides). Those can leak a little future information into the cleaned values.
 `days since last vet case` (PLAN §H context) is deliberately omitted — it would need medical tables.
 
 Labels (`label_days`, from cases only): label_vet = 1 if a vet-aware case starts in (d, d+14], 0 if no case of any
@@ -252,19 +255,18 @@ def label_days(grid: pd.DataFrame, episodes: pd.DataFrame, lcfg: dict) -> pd.Dat
 # ── Leakage check ────────────────────────────────────────────────────────────────────────────────────────
 
 def truncate_inputs(inp: Inputs, as_of: pd.Timestamp, animal_ids=None) -> Inputs:
-    """What the system knew at the end of day `as_of`: drop every entry that became visible later."""
-    end = as_of + pd.Timedelta(days=1)
+    """What the system knew at the end of local day `as_of`: drop every entry that became visible on a later local day."""
     keep_animal = (lambda df: df[df["animal_id"].isin(animal_ids)]) if animal_ids is not None else (lambda df: df)
     w = keep_animal(inp.weights)
     known = w[["recorded_at", "created_at"]].max(axis=1)
     return replace(
         inp,
         animals=keep_animal(inp.animals),
-        weights=w[known < end],
+        weights=w[local_day(known, inp.tz) <= as_of],
         intake=keep_animal(inp.intake)[lambda d: d["available_date"] <= as_of],
         notes=keep_animal(inp.notes)[lambda d: d["available_date"] <= as_of],
         signals=keep_animal(inp.signals)[lambda d: d["available_date"] <= as_of],
-        stays=keep_animal(inp.stays)[lambda d: d["start"] < end],
+        stays=keep_animal(inp.stays)[lambda d: local_day(d["start"], inp.tz) <= as_of],
     )
 
 
@@ -355,8 +357,9 @@ def run() -> None:
         f"- Grid: {len(table):,} animal-days, {table['animal_id'].nunique():,} animals, "
         f"{table['date'].min():%Y-%m-%d} → {table['date'].max():%Y-%m-%d} (vet-data coverage starts {grid_start:%Y-%m-%d})",
         f"- Features: {len(cols)} model inputs ({', '.join(sorted({c.split('_')[0] + '_' for c in cols}))})",
-        f"- **Leakage check passed**: features rebuilt from data truncated at random dates matched on "
-        f"{compared:,} rows; no label/medical-looking column names",
+        f"- **Leakage check passed** (feature stage only): features rebuilt from cleaned data truncated at random dates "
+        f"matched on {compared:,} rows; no label/medical-looking column names. Cleaning itself uses the full history "
+        f"(see features.py docstring), so it is not covered",
         f"- Labelled rows (label_vet): {int(lab.sum()):,}; positives {int((table['label_vet'] == 1).sum()):,} "
         f"({100 * (table['label_vet'] == 1).sum() / max(lab.sum(), 1):.2f}% of labelled); "
         f"label_all positives {int((table['label_all'] == 1).sum()):,}",

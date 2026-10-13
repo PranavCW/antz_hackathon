@@ -155,3 +155,15 @@ def test_no_medical_inputs_or_label_like_columns(cfg):
                                                   "species", "tz"}
     cols = F.feature_columns(feats(synthetic_inputs(), cfg).reset_index())
     assert cols and not [c for c in cols if any(w in c for w in F.FORBIDDEN_IN_FEATURES)]
+
+
+def test_truncate_uses_local_day_not_utc(cfg):
+    # 2026-02-10 20:00 UTC is already 2026-02-11 01:30 in Asia/Kolkata: not visible at the end of local Feb 10
+    inp = synthetic_inputs()
+    inp = F.replace(inp, tz="Asia/Kolkata")
+    late = inp.weights.iloc[[0]].copy()
+    late[["recorded_at", "created_at"]] = pd.Timestamp("2026-02-10 20:00")
+    inp = F.replace(inp, weights=pd.concat([inp.weights, late], ignore_index=True))
+    day = pd.Timestamp("2026-02-10")
+    assert (F.truncate_inputs(inp, day).weights["created_at"] == pd.Timestamp("2026-02-10 20:00")).sum() == 0
+    assert (F.truncate_inputs(inp, day + pd.Timedelta(days=1)).weights["created_at"] == pd.Timestamp("2026-02-10 20:00")).sum() == 1
